@@ -8,16 +8,35 @@ export interface LawArticle {
   text: string;
   tags: string[];
   lawSource?: string;
+  articleNumberLabel?: string; // e.g., "Article 13"
 }
 
 export interface SearchResult extends LawArticle {
   score?: number;
   matches?: any[];
+  matchType?: 'exact' | 'fuzzy';
+}
+
+export interface QueryMeta {
+  originalQuery: string;
+  normalizedQuery: string;
+  isQuoted: boolean;
+  isArticlePattern: boolean;
+  articleNumber?: number;
+  tokens: string[];
+  regexPatterns: {
+    wholeWord?: RegExp;
+    articlePattern?: RegExp;
+    articleStartPattern?: RegExp;
+    quotedPhrase?: RegExp;
+    andTerms?: RegExp;
+  };
 }
 
 class LawSearch {
   private fuse: Fuse<LawArticle> | null = null;
   private articles: LawArticle[] = [];
+  private normalizedCache = new Map<string, string>();
 
   private readonly fuseOptions = {
     keys: [
@@ -27,7 +46,7 @@ class LawSearch {
       { name: 'chapter', weight: 0.05 },
       { name: 'part', weight: 0.05 },
     ],
-    threshold: 0.4,
+    threshold: 0.2, // Lower threshold for fuzzy mode
     includeMatches: true,
     includeScore: true,
     minMatchCharLength: 2,
@@ -38,6 +57,13 @@ class LawSearch {
     try {
       const response = await fetch('/law.json');
       this.articles = await response.json();
+      
+      // Add articleNumberLabel for each article
+      this.articles = this.articles.map(article => ({
+        ...article,
+        articleNumberLabel: `Article ${article.article}`
+      }));
+      
       this.fuse = new Fuse(this.articles, this.fuseOptions);
       return this.articles;
     } catch (error) {
@@ -46,75 +72,299 @@ class LawSearch {
     }
   }
 
-  search(query: string, filters?: { chapter?: string; part?: string; tags?: string[]; lawSource?: string }): SearchResult[] {
-    if (!this.fuse || !query.trim()) {
+  search(query: string, filters?: { chapter?: string; part?: string; tags?: string[]; lawSource?: string }, useFuzzy: boolean = false): SearchResult[] {
+    console.log('Search called with query:', query, 'fuzzy:', useFuzzy, 'filters:', filters);
+    
+    if (!query.trim()) {
       // Show only first 4 articles when no search is performed
+      console.log('No query, returning first 4 articles');
       return this.articles.slice(0, 4).map(article => ({ ...article }));
     }
 
-    // Clean and normalize the search query
     const cleanQuery = query.trim();
     if (!cleanQuery) {
+      console.log('Empty query after trim, returning first 4 articles');
       return this.articles.slice(0, 4).map(article => ({ ...article }));
     }
 
-    // Handle article number searches (e.g., "23", "Article 23", "Art 23")
-    const articleNumberMatch = cleanQuery.match(/(?:article|art\.?)\s*(\d+)|^(\d+)$/i);
-    if (articleNumberMatch) {
-      const articleNum = parseInt(articleNumberMatch[1] || articleNumberMatch[2]);
-      const exactArticle = this.articles.find(article => article.article === articleNum);
-      
-      if (exactArticle) {
-        // Return only the exact article match
-        return [{ ...exactArticle, score: 0 }];
-      } else {
-        // Return empty array if article number not found
-        return [];
-      }
+    console.log('Processing query:', cleanQuery);
+
+    // Use fuzzy search if explicitly requested
+    if (useFuzzy && this.fuse) {
+      console.log('Using fuzzy search');
+      const fuseResults = this.fuse.search(cleanQuery);
+      let results: SearchResult[] = fuseResults.map(result => ({
+        ...result.item,
+        score: result.score || 0,
+        matches: result.matches ? [...result.matches] : [],
+        matchType: 'fuzzy' as const
+      }));
+
+      // Apply filters to fuzzy results
+      results = this.applyFilters(results, filters);
+      console.log('Fuzzy search results:', results.length, 'articles');
+      return results;
     }
 
-    // Find exact keyword matches only
+    // Use exact search by default
+    const queryMeta = this.buildQueryMeta(cleanQuery);
+    console.log('Query meta:', queryMeta);
+
     const exactMatches: SearchResult[] = [];
     
     // Search through all articles for exact matches
     for (const article of this.articles) {
-      if (this.hasExactSearchTerm(article, cleanQuery)) {
+      const matchResult = this.matchItem(article, queryMeta);
+      if (matchResult.matches) {
+        const score = this.scoreMatch(article, queryMeta);
         exactMatches.push({
           ...article,
-          score: 0,
-          matches: undefined,
+          score,
+          matchType: 'exact' as const
         });
       }
     }
     
-    // Sort exact matches by relevance (title matches first, then by article number)
+    // Sort exact matches by relevance
     let results = exactMatches.sort((a, b) => {
-      // Prioritize matches in title
-      const aTitleMatch = a.title.toLowerCase().includes(cleanQuery.toLowerCase());
-      const bTitleMatch = b.title.toLowerCase().includes(cleanQuery.toLowerCase());
-      
-      if (aTitleMatch && !bTitleMatch) return -1;
-      if (!aTitleMatch && bTitleMatch) return 1;
-      
-      // If both or neither have title matches, sort by article number
-      return a.article - b.article;
+      // Higher score = better match
+      return (b.score || 0) - (a.score || 0);
     });
 
     // Apply filters
-    if (filters?.chapter) {
-      results = results.filter(result => 
+    results = this.applyFilters(results, filters);
+
+    console.log('Exact search results:', results.length, 'articles');
+    return results;
+  }
+
+  buildQueryMeta(query: string): QueryMeta {
+    const originalQuery = query;
+    const normalizedQuery = this.normalize(query);
+    
+    // Check if query is quoted
+    const isQuoted = query.startsWith('"') && query.endsWith('"');
+    const unquotedQuery = isQuoted ? query.slice(1, -1) : query;
+    const normalizedUnquoted = this.normalize(unquotedQuery);
+    
+    // Check if query matches article pattern
+    const articleMatch = normalizedUnquoted.match(/^article\s*(\d+)$/i);
+    const isArticlePattern = !!articleMatch;
+    const articleNumber = articleMatch ? parseInt(articleMatch[1]) : undefined;
+    
+    // Extract tokens for multi-word queries
+    const tokens = normalizedUnquoted.split(/\s+/).filter(token => token.length > 0);
+    
+    // Build regex patterns
+    const regexPatterns: QueryMeta['regexPatterns'] = {};
+    
+    if (tokens.length === 1 && !isArticlePattern) {
+      // Single token: whole word match
+      const token = tokens[0];
+      regexPatterns.wholeWord = new RegExp(`\\b${this.escapeRegex(token)}\\b`, 'i');
+    } else if (isArticlePattern && articleNumber !== undefined) {
+      // Article pattern: exact article number with lookahead
+      regexPatterns.articlePattern = new RegExp(`\\barticle\\s*${articleNumber}(?=[^\\d]|$)`, 'i');
+      regexPatterns.articleStartPattern = new RegExp(`^article\\s*${articleNumber}(?=[^\\d]|$)`, 'i');
+    } else if (isQuoted) {
+      // Quoted phrase: exact phrase match
+      regexPatterns.quotedPhrase = new RegExp(this.escapeRegex(normalizedUnquoted), 'i');
+    } else if (tokens.length > 1) {
+      // Multi-word unquoted: AND of exact whole-word terms
+      const andPatterns = tokens.map(token => `(?=.*\\b${this.escapeRegex(token)}\\b)`);
+      regexPatterns.andTerms = new RegExp(andPatterns.join(''), 'i');
+    }
+    
+    return {
+      originalQuery,
+      normalizedQuery: normalizedUnquoted,
+      isQuoted,
+      isArticlePattern,
+      articleNumber,
+      tokens,
+      regexPatterns
+    };
+  }
+
+  matchItem(article: LawArticle, queryMeta: QueryMeta): { matches: boolean; matchDetails?: any } {
+    const { regexPatterns, isArticlePattern, articleNumber } = queryMeta;
+    
+    // Get normalized searchable text
+    const searchableText = this.getNormalizedSearchableText(article);
+    const normalizedTitle = this.normalize(article.title);
+    const normalizedArticleLabel = this.normalize(article.articleNumberLabel || '');
+    
+    // Article pattern matching (highest priority)
+    if (isArticlePattern && articleNumber !== undefined) {
+      // Exact article number match
+      if (article.article === articleNumber) {
+        return { matches: true, matchDetails: { type: 'exactArticleNumber' } };
+      }
+      
+      // Article pattern in title or text
+      if (regexPatterns.articlePattern) {
+        if (regexPatterns.articlePattern.test(normalizedTitle) || 
+            regexPatterns.articlePattern.test(searchableText)) {
+          return { matches: true, matchDetails: { type: 'articlePattern' } };
+        }
+      }
+      
+      return { matches: false };
+    }
+    
+    // Quoted phrase matching
+    if (regexPatterns.quotedPhrase) {
+      if (regexPatterns.quotedPhrase.test(searchableText)) {
+        return { matches: true, matchDetails: { type: 'quotedPhrase' } };
+      }
+      return { matches: false };
+    }
+    
+    // Single token whole word matching
+    if (regexPatterns.wholeWord) {
+      if (regexPatterns.wholeWord.test(searchableText)) {
+        return { matches: true, matchDetails: { type: 'wholeWord' } };
+      }
+      return { matches: false };
+    }
+    
+    // Multi-word AND matching
+    if (regexPatterns.andTerms) {
+      if (regexPatterns.andTerms.test(searchableText)) {
+        return { matches: true, matchDetails: { type: 'andTerms' } };
+      }
+      return { matches: false };
+    }
+    
+    return { matches: false };
+  }
+
+  scoreMatch(article: LawArticle, queryMeta: QueryMeta): number {
+    const { regexPatterns, isArticlePattern, articleNumber } = queryMeta;
+    let score = 0;
+    
+    const searchableText = this.getNormalizedSearchableText(article);
+    const normalizedTitle = this.normalize(article.title);
+    const normalizedArticleLabel = this.normalize(article.articleNumberLabel || '');
+    
+    // Article pattern scoring (highest priority)
+    if (isArticlePattern && articleNumber !== undefined) {
+      // Exact article number match gets highest score
+      if (article.article === articleNumber) {
+        score += 1000;
+      }
+      
+      // Title starts with article pattern
+      if (regexPatterns.articleStartPattern && regexPatterns.articleStartPattern.test(normalizedTitle)) {
+        score += 800;
+      }
+      
+      // Article pattern in title
+      if (regexPatterns.articlePattern && regexPatterns.articlePattern.test(normalizedTitle)) {
+        score += 600;
+      }
+      
+      // Article pattern in text
+      if (regexPatterns.articlePattern && regexPatterns.articlePattern.test(searchableText)) {
+        score += 400;
+      }
+      
+      return score;
+    }
+    
+    // Quoted phrase scoring
+    if (regexPatterns.quotedPhrase) {
+      // Title contains exact phrase
+      if (regexPatterns.quotedPhrase.test(normalizedTitle)) {
+        score += 500;
+      }
+      // Text contains exact phrase
+      else if (regexPatterns.quotedPhrase.test(searchableText)) {
+        score += 300;
+      }
+      return score;
+    }
+    
+    // Single token scoring
+    if (regexPatterns.wholeWord) {
+      // Title contains whole word
+      if (regexPatterns.wholeWord.test(normalizedTitle)) {
+        score += 400;
+      }
+      // Text contains whole word
+      else if (regexPatterns.wholeWord.test(searchableText)) {
+        score += 200;
+      }
+      return score;
+    }
+    
+    // Multi-word AND scoring
+    if (regexPatterns.andTerms) {
+      // All terms in title
+      if (regexPatterns.andTerms.test(normalizedTitle)) {
+        score += 300;
+      }
+      // All terms in text
+      else if (regexPatterns.andTerms.test(searchableText)) {
+        score += 150;
+      }
+      return score;
+    }
+    
+    return score;
+  }
+
+  private normalize(text: string): string {
+    if (this.normalizedCache.has(text)) {
+      return this.normalizedCache.get(text)!;
+    }
+    
+    const normalized = text
+      .normalize('NFD') // Unicode normalization
+      .replace(/\p{Diacritic}/gu, '') // Remove diacritics
+      .toLowerCase()
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .trim();
+    
+    this.normalizedCache.set(text, normalized);
+    return normalized;
+  }
+
+  private getNormalizedSearchableText(article: LawArticle): string {
+    const searchableFields = [
+      article.title,
+      article.text,
+      article.chapter,
+      article.part,
+      ...article.tags
+    ].filter(Boolean);
+    
+    return this.normalize(searchableFields.join(' '));
+  }
+
+  private escapeRegex(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private applyFilters(results: SearchResult[], filters?: { chapter?: string; part?: string; tags?: string[]; lawSource?: string }): SearchResult[] {
+    if (!filters) return results;
+
+    let filteredResults = results;
+
+    if (filters.chapter) {
+      filteredResults = filteredResults.filter(result => 
         result.chapter.toLowerCase().includes(filters.chapter!.toLowerCase())
       );
     }
 
-    if (filters?.part) {
-      results = results.filter(result => 
+    if (filters.part) {
+      filteredResults = filteredResults.filter(result => 
         result.part.toLowerCase().includes(filters.part!.toLowerCase())
       );
     }
 
-    if (filters?.tags && filters.tags.length > 0) {
-      results = results.filter(result =>
+    if (filters.tags && filters.tags.length > 0) {
+      filteredResults = filteredResults.filter(result =>
         filters.tags!.some(tag => 
           result.tags.some(articleTag => 
             articleTag.toLowerCase().includes(tag.toLowerCase())
@@ -123,119 +373,15 @@ class LawSearch {
       );
     }
 
-    if (filters?.lawSource) {
-      results = results.filter(result => 
+    if (filters.lawSource) {
+      filteredResults = filteredResults.filter(result => 
         result.lawSource === filters.lawSource
       );
     }
 
-    return results;
+    return filteredResults;
   }
 
-  private hasExactSearchTerm(article: LawArticle, exactQuery: string): boolean {
-    // Create searchable text from all relevant fields
-    const searchableText = `${article.title} ${article.text} ${article.tags.join(' ')} ${article.chapter} ${article.part}`.toLowerCase();
-    
-    // Clean and normalize the query
-    const normalizedQuery = exactQuery.toLowerCase().trim();
-    if (!normalizedQuery) return false;
-    
-    // Split query into words, filtering out empty strings
-    const queryWords = normalizedQuery.split(/\s+/).filter(word => word.length > 0);
-    
-    if (queryWords.length === 1) {
-      // Single word: must be exact word match with word boundaries
-      const word = queryWords[0];
-      const exactWordRegex = new RegExp(`\\b${this.escapeRegex(word)}\\b`, 'gi');
-      return exactWordRegex.test(searchableText);
-    } else {
-      // Multi-word queries: prioritize exact phrase matches
-      
-      // First, check for exact phrase match (most important)
-      if (searchableText.includes(normalizedQuery)) {
-        return true;
-      }
-      
-      // Second, check if all words appear as exact word matches in the same order
-      // This helps find related concepts that appear together
-      const allWordsPresent = queryWords.every(word => {
-        const exactWordRegex = new RegExp(`\\b${this.escapeRegex(word)}\\b`, 'gi');
-        return exactWordRegex.test(searchableText);
-      });
-      
-      if (allWordsPresent) {
-        // Additional check: ensure words appear in reasonable proximity
-        // This prevents matches where words are scattered across the entire text
-        return this.wordsInProximity(searchableText, queryWords);
-      }
-      
-      return false;
-    }
-  }
-
-  private escapeRegex(string: string): string {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  private wordsInProximity(text: string, words: string[]): boolean {
-    // Find positions of all words
-    const wordPositions: number[] = [];
-    
-    for (const word of words) {
-      const regex = new RegExp(`\\b${this.escapeRegex(word)}\\b`, 'gi');
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        wordPositions.push(match.index);
-      }
-    }
-    
-    if (wordPositions.length < words.length) {
-      return false; // Not all words found
-    }
-    
-    // Sort positions
-    wordPositions.sort((a, b) => a - b);
-    
-    // Check if words appear within a reasonable distance (500 characters)
-    // This allows for some flexibility while maintaining relevance
-    const maxDistance = 500;
-    
-    for (let i = 0; i < wordPositions.length - 1; i++) {
-      if (wordPositions[i + 1] - wordPositions[i] > maxDistance) {
-        return false;
-      }
-    }
-    
-    return true;
-  }
-
-  private calculateWordMatchScore(article: LawArticle, searchTerms: string[]): number {
-    let score = 0;
-    const text = `${article.title} ${article.text} ${article.tags.join(' ')}`.toLowerCase();
-    
-    searchTerms.forEach(term => {
-      // Exact word match (highest priority)
-      const exactWordRegex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
-      const exactMatches = (text.match(exactWordRegex) || []).length;
-      score += exactMatches * 10; // High weight for exact word matches
-      
-      // Partial word match (lower priority)
-      const partialMatches = (text.match(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')) || []).length;
-      score += (partialMatches - exactMatches) * 2; // Lower weight for partial matches
-      
-      // Title matches get extra points
-      if (article.title.toLowerCase().includes(term)) {
-        score += 5;
-      }
-      
-      // Tag matches get extra points
-      if (article.tags.some(tag => tag.toLowerCase().includes(term))) {
-        score += 3;
-      }
-    });
-    
-    return score;
-  }
 
   getArticleByNumber(articleNumber: number): LawArticle | undefined {
     return this.articles.find(article => article.article === articleNumber);
@@ -245,10 +391,8 @@ class LawSearch {
     return this.articles;
   }
 
-  // Clear any cached search state (if needed in the future)
   clearSearchCache(): void {
-    // Currently no caching, but this method is here for future use
-    // if we implement search result caching
+    this.normalizedCache.clear();
   }
 
   getQuickFilters() {
@@ -279,24 +423,27 @@ export function highlightSearchTerms(text: string, query: string): string {
   
   let highlightedText = text;
   const exactQuery = query.trim();
-  const queryWords = exactQuery.split(/\s+/).filter(word => word.length > 0);
+  const queryMeta = lawSearch.buildQueryMeta(exactQuery);
   
-  if (queryWords.length === 1) {
-    // Single word: highlight only exact word boundary matches
-    const exactWordRegex = new RegExp(`\\b(${queryWords[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b`, 'gi');
-    highlightedText = highlightedText.replace(exactWordRegex, '<mark class="exact-match">$1</mark>');
+  if (queryMeta.isArticlePattern && queryMeta.articleNumber !== undefined) {
+    // Highlight article patterns
+    const articleRegex = new RegExp(`\\b(article\\s*${queryMeta.articleNumber})(?=[^\\d]|$)`, 'gi');
+    highlightedText = highlightedText.replace(articleRegex, '<mark class="exact-search">$1</mark>');
+  } else if (queryMeta.isQuoted) {
+    // Highlight quoted phrases
+    const phraseRegex = new RegExp(`(${queryMeta.normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    highlightedText = highlightedText.replace(phraseRegex, '<mark class="exact-search">$1</mark>');
+  } else if (queryMeta.tokens.length === 1) {
+    // Highlight single tokens as whole words
+    const token = queryMeta.tokens[0];
+    const wholeWordRegex = new RegExp(`\\b(${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b`, 'gi');
+    highlightedText = highlightedText.replace(wholeWordRegex, '<mark class="exact-search">$1</mark>');
   } else {
-    // Multi-word: first try exact phrase match
-    const exactPhraseRegex = new RegExp(`(${exactQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    highlightedText = highlightedText.replace(exactPhraseRegex, '<mark class="exact-search">$1</mark>');
-    
-    // If no exact phrase found, highlight individual exact word matches
-    if (!highlightedText.includes('<mark class="exact-search">')) {
-      queryWords.forEach(term => {
-        const exactWordRegex = new RegExp(`(?<!<mark[^>]*>)\\b(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b(?![^<]*</mark>)`, 'gi');
-        highlightedText = highlightedText.replace(exactWordRegex, '<mark class="exact-match">$1</mark>');
-      });
-    }
+    // Highlight multi-word terms
+    queryMeta.tokens.forEach(token => {
+      const wholeWordRegex = new RegExp(`(?<!<mark[^>]*>)\\b(${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b(?![^<]*</mark>)`, 'gi');
+      highlightedText = highlightedText.replace(wholeWordRegex, '<mark class="exact-match">$1</mark>');
+    });
   }
   
   return highlightedText;

@@ -10,6 +10,7 @@ interface SearchBarProps {
   onSearch: (query: string) => void;
   onFilterChange: (filters: { tags?: string[]; part?: string; chapter?: string; lawSource?: string }) => void;
   isLoading?: boolean;
+  resultCount?: number;
 }
 
 const QUICK_FILTERS = [
@@ -28,7 +29,8 @@ export default function SearchBar({
   onQueryChange, 
   onSearch, 
   onFilterChange,
-  isLoading = false 
+  isLoading = false,
+  resultCount = 0
 }: SearchBarProps) {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [activeLawSource, setActiveLawSource] = useState<string>('');
@@ -114,7 +116,7 @@ export default function SearchBar({
           <Input
             ref={inputRef}
             type="text"
-            placeholder="Search laws by keyword or number..."
+            placeholder="Type here"
             title="Search by keyword (e.g., 'freedom', 'citizenship') or article number (e.g., 'Article 23', '25')"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
@@ -145,6 +147,15 @@ export default function SearchBar({
           </Button>
         </div>
       </form>
+
+      {/* Search Results Count */}
+      {query.trim() && (
+        <div className="text-sm text-muted-foreground">
+          <span>
+            {resultCount} result{resultCount !== 1 ? 's' : ''} for "{query}"
+          </span>
+        </div>
+      )}
 
       {/* Quick Filter Tags */}
       <div className="space-y-2">

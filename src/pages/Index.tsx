@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Loader2, FileText, AlertCircle } from 'lucide-react';
 import SearchBar from '@/components/SearchBar';
 import ResultCard from '@/components/ResultCard';
+import { Badge } from '@/components/ui/badge';
 import { lawSearch, SearchResult, LawArticle } from '@/lib/search';
 import { useToast } from '@/hooks/use-toast';
 
@@ -22,6 +23,7 @@ const Index = () => {
     const initializeApp = async () => {
       try {
         const loadedArticles = await lawSearch.initialize();
+        console.log('Loaded articles:', loadedArticles.length);
         setArticles(loadedArticles);
         
         // Always clear search on refresh - show only first 4 articles
@@ -62,7 +64,11 @@ const Index = () => {
   const debouncedSearch = useMemo(() => {
     const timeoutId = setTimeout(() => {
       if (query.trim()) {
-        performSearch(query);
+        // Check if this is an article number search - if so, don't run debounced search
+        const articleNumberMatch = query.trim().match(/(?:article|art\.?)\s*(\d+)|^(\d+)$/i);
+        if (!articleNumberMatch) {
+          performSearch(query);
+        }
       } else {
         // Show only first 4 articles when no search query
         setResults(articles.slice(0, 4).map(article => ({ ...article })));
@@ -70,19 +76,32 @@ const Index = () => {
     }, 250);
 
     return () => clearTimeout(timeoutId);
-  }, [query, filters, articles]);
+  }, [query, articles]);
 
   useEffect(() => {
     return debouncedSearch;
   }, [debouncedSearch]);
 
+  // Handle filter changes separately to avoid interfering with article number searches
+  useEffect(() => {
+    if (query.trim()) {
+      // Check if this is an article number search - if so, don't re-run with filters
+      const articleNumberMatch = query.trim().match(/(?:article|art\.?)\s*(\d+)|^(\d+)$/i);
+      if (!articleNumberMatch) {
+        performSearch(query);
+      }
+    }
+  }, [filters]);
+
   const performSearch = (searchQuery: string) => {
+    console.log('performSearch called with:', searchQuery);
     setIsSearching(true);
     // Clear previous results immediately to show fresh search
     setResults([]);
     
     try {
-      const searchResults = lawSearch.search(searchQuery, filters);
+      const searchResults = lawSearch.search(searchQuery, filters, false); // Always use exact search
+      console.log('Search results received:', searchResults.length, 'articles');
       setResults(searchResults);
       
       // Update URL without triggering a page reload
@@ -108,6 +127,13 @@ const Index = () => {
     // Clear results immediately when user starts typing a new search
     if (searchQuery.trim() !== query.trim()) {
       setResults([]);
+    }
+    
+    // For article number searches, perform search immediately
+    const articleNumberMatch = searchQuery.trim().match(/(?:article|art\.?)\s*(\d+)|^(\d+)$/i);
+    if (articleNumberMatch) {
+      console.log('Immediate article search for:', searchQuery);
+      performSearch(searchQuery);
     }
   };
 
@@ -161,6 +187,7 @@ const Index = () => {
             onSearch={handleSearch}
             onFilterChange={handleFilterChange}
             isLoading={isSearching}
+            resultCount={results.length}
           />
         </div>
       </div>
@@ -173,7 +200,7 @@ const Index = () => {
             <h2 className="text-2xl font-semibold">
               {query ? (
                 <>
-                  {results.length} exact match{results.length !== 1 ? 'es' : ''} for "{query}"
+                  {results.length} result{results.length !== 1 ? 's' : ''} for "{query}"
                 </>
               ) : (
                 `First ${results.length} articles`
@@ -205,7 +232,7 @@ const Index = () => {
               <h3 className="text-xl font-semibold">No exact matches found</h3>
               <p className="text-muted-foreground max-w-lg mx-auto">
                 No articles found containing the exact keywords "{query}". 
-                Our search looks for precise matches to ensure you find the most relevant legal information.
+                Try removing quotes or using different search terms.
               </p>
             </div>
             <div className="bg-muted/50 rounded-lg p-6 max-w-2xl mx-auto">

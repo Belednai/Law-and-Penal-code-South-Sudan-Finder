@@ -131,53 +131,37 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   
-  /* Search highlight styling */
+  /* Search highlight styling - simple light yellow background */
   mark {
-    @apply bg-yellow-200 text-yellow-900 rounded-sm px-0.5;
-    background-color: hsl(var(--highlight));
+    background-color: #fef3c7; /* Light yellow */
+    color: inherit;
+    padding: 0;
+    border-radius: 2px;
   }
   
-  /* Exact search term highlighting (highest priority) */
-  mark.exact-search {
-    @apply bg-orange-400 text-orange-900 font-bold px-1 py-0.5 rounded;
-    background-color: hsl(25 100% 60%);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    border: 1px solid hsl(25 100% 50%);
-  }
-  
-  /* Exact word match highlighting (second priority) */
-  mark.exact-match {
-    @apply bg-yellow-300 text-yellow-900 font-semibold px-1 py-0.5 rounded;
-    background-color: hsl(45 100% 70%);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
-  
-  /* Partial match highlighting (lower priority) */
+  /* All search highlights use the same simple styling */
+  mark.exact-search,
+  mark.exact-match,
   mark.partial-match {
-    @apply bg-yellow-200 text-yellow-800 px-0.5 py-0.5 rounded;
-    background-color: hsl(45 100% 80%);
+    background-color: #fef3c7; /* Light yellow */
+    color: inherit;
+    padding: 0;
+    border-radius: 2px;
+    box-shadow: none;
+    border: none;
+    text-shadow: none;
+    transform: none;
+    display: inline;
+    margin: 0;
   }
   
-  .dark mark {
-    @apply bg-yellow-900/40 text-yellow-200;
-  }
-  
-  .dark mark.exact-search {
-    @apply bg-orange-600/80 text-orange-100 font-bold;
-    background-color: hsl(25 85% 45%);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-    border: 1px solid hsl(25 85% 35%);
-  }
-  
-  .dark mark.exact-match {
-    @apply bg-yellow-800/60 text-yellow-100 font-semibold;
-    background-color: hsl(45 85% 45%);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
-  
+  /* Dark mode - slightly darker yellow */
+  .dark mark,
+  .dark mark.exact-search,
+  .dark mark.exact-match,
   .dark mark.partial-match {
-    @apply bg-yellow-900/30 text-yellow-200;
-    background-color: hsl(45 85% 35%);
+    background-color: #fbbf24; /* Darker yellow for dark mode */
+    color: inherit;
   }
   
   /* Smooth scrolling for deep links */

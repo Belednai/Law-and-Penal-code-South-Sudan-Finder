@@ -17,7 +17,7 @@ export default function ResultCard({
   result, 
   query, 
   isExpanded = false, 
-  onToggleExpand 
+  onToggleExpand
 }: ResultCardProps) {
   const { toast } = useToast();
   const [isAnimating, setIsAnimating] = useState(false);
