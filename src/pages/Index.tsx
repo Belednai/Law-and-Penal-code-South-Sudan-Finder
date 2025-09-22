@@ -230,6 +230,9 @@ const Index = () => {
           </p>
           <div className="mt-4 pt-4 border-t border-border/50">
             <p className="font-medium text-foreground">Developed by Belednai Technology</p>
+            <p className="mt-1 text-xs text-muted-foreground/80">
+              This site is not sponsored by government, it was a voluntary work by Belednai Technology
+            </p>
             <p className="mt-1">
               <a href="https://www.belednai.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                 www.belednai.com

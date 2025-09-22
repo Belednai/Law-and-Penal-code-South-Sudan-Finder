@@ -15,14 +15,7 @@ interface SearchBarProps {
 const QUICK_FILTERS = [
   { label: 'Bill of Rights', tag: 'bill of rights' },
   { label: 'Human Rights', tag: 'human rights' },
-  { label: 'Citizenship', tag: 'citizenship' },
-  { label: 'Government', tag: 'government' },
-  { label: 'Executive', tag: 'executive' },
-  { label: 'Legislature', tag: 'legislature' },
-  { label: 'Judiciary', tag: 'judiciary' },
-  { label: 'Freedom of Expression', tag: 'freedom of expression' },
-  { label: 'Education', tag: 'education' },
-  { label: 'Security', tag: 'security' }
+  { label: 'Citizenship', tag: 'citizenship' }
 ];
 
 const LAW_SOURCE_FILTERS = [
@@ -145,11 +138,10 @@ export default function SearchBar({
           <Button
             type="submit"
             size="lg"
-            className="absolute right-1 sm:right-2 top-1 sm:top-2 bottom-1 sm:bottom-2 px-3 sm:px-6 rounded-lg text-sm sm:text-base"
+            className="absolute right-1 sm:right-2 top-1 sm:top-2 bottom-1 sm:bottom-2 px-6 sm:px-6 rounded-lg text-sm sm:text-base min-w-[80px] sm:min-w-0"
             disabled={isLoading}
           >
-            <span className="hidden sm:inline">Search</span>
-            <span className="sm:hidden">Go</span>
+            Search
           </Button>
         </div>
       </form>
