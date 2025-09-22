@@ -140,16 +140,17 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-brand to-brand-light text-white">
-        <div className="container mx-auto px-4 py-16 lg:py-24">
-          <div className="text-center space-y-6 mb-12">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
-              <FileText className="h-4 w-4" />
-              Republic of South Sudan
+        <div className="container mx-auto px-4 py-8 sm:py-12 md:py-16 lg:py-24 hero-mobile">
+          <div className="text-center space-y-4 sm:space-y-6 mb-8 sm:mb-10 md:mb-12">
+            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
+              <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Republic of South Sudan</span>
+              <span className="xs:hidden">South Sudan</span>
             </div>
-            <h1 className="text-4xl lg:text-6xl font-bold tracking-tight">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-bold tracking-tight leading-tight hero-title-mobile">
               South Sudan Laws Finder
             </h1>
-            <p className="text-xl lg:text-2xl text-white/90 max-w-3xl mx-auto">
+            <p className="text-sm sm:text-base md:text-lg lg:text-xl xl:text-2xl text-white/90 max-w-3xl mx-auto px-2 hero-subtitle-mobile text-mobile-safe">
               Instant search across the Transitional Constitution of South Sudan. No login required.
             </p>
           </div>

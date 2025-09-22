@@ -110,24 +110,25 @@ export default function SearchBar({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-4">
+    <div className="w-full max-w-4xl mx-auto space-y-3 sm:space-y-4">
       {/* Main Search */}
       <form onSubmit={handleSubmit} className="relative">
         <div 
           className="relative flex items-center"
           onClick={() => inputRef.current?.focus()}
         >
-          <Search className="absolute left-4 h-5 w-5 text-muted-foreground z-10" />
+          <Search className="absolute left-3 sm:left-4 h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground z-10" />
           <Input
             ref={inputRef}
             type="text"
-            placeholder="Search law articles by keyword or number (e.g., 'freedom', 'Article 23', 'citizenship')"
+            placeholder="Search laws by keyword or number..."
+            title="Search by keyword (e.g., 'freedom', 'citizenship') or article number (e.g., 'Article 23', '25')"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             onFocus={handleInputFocus}
             onKeyDown={handleKeyDown}
             onClick={handleInputClick}
-            className="pl-12 pr-24 h-14 text-lg rounded-xl border-2 border-border focus:border-primary transition-colors bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0"
+            className="pl-10 sm:pl-12 pr-20 sm:pr-24 h-12 sm:h-14 text-base sm:text-lg rounded-xl border-2 border-border focus:border-primary transition-colors bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0 search-input-mobile search-compact"
             autoComplete="off"
             spellCheck="false"
           />
@@ -135,65 +136,72 @@ export default function SearchBar({
             <button
               type="button"
               onClick={clearQuery}
-              className="absolute right-20 p-1 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100"
+              className="absolute right-16 sm:right-20 p-1 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100"
               title="Clear search"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3 w-3 sm:h-4 sm:w-4" />
             </button>
           )}
           <Button
             type="submit"
             size="lg"
-            className="absolute right-2 top-2 bottom-2 px-6 rounded-lg"
+            className="absolute right-1 sm:right-2 top-1 sm:top-2 bottom-1 sm:bottom-2 px-3 sm:px-6 rounded-lg text-sm sm:text-base"
             disabled={isLoading}
           >
-            Search
+            <span className="hidden sm:inline">Search</span>
+            <span className="sm:hidden">Go</span>
           </Button>
         </div>
       </form>
 
       {/* Quick Filter Tags */}
-      <div className="flex flex-wrap gap-2">
-        <span className="text-sm text-muted-foreground mr-2 py-2">Quick filters:</span>
-        {QUICK_FILTERS.map((filter) => (
-          <Badge
-            key={filter.tag}
-            variant={activeFilters.includes(filter.tag) ? "default" : "outline"}
-            className="cursor-pointer transition-colors hover:bg-primary/10"
-            onClick={() => handleFilterToggle(filter.tag)}
-          >
-            {filter.label}
-          </Badge>
-        ))}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 py-1.5 sm:py-2 whitespace-nowrap">Quick filters:</span>
+          {QUICK_FILTERS.map((filter) => (
+            <Badge
+              key={filter.tag}
+              variant={activeFilters.includes(filter.tag) ? "default" : "outline"}
+              className="cursor-pointer transition-colors hover:bg-primary/10 text-xs sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 badge-mobile"
+              onClick={() => handleFilterToggle(filter.tag)}
+            >
+              {filter.label}
+            </Badge>
+          ))}
+        </div>
         {(activeFilters.length > 0 || activeLawSource) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setActiveFilters([]);
-              setActiveLawSource('');
-              onFilterChange({ tags: [] });
-            }}
-            className="h-6 text-xs"
-          >
-            Clear filters
-          </Button>
+          <div className="flex justify-start">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setActiveFilters([]);
+                setActiveLawSource('');
+                onFilterChange({ tags: [] });
+              }}
+              className="h-6 text-xs px-2"
+            >
+              Clear filters
+            </Button>
+          </div>
         )}
       </div>
 
       {/* Law Source Filters */}
-      <div className="flex flex-wrap gap-2">
-        <span className="text-sm text-muted-foreground mr-2 py-2">Law sources:</span>
-        {LAW_SOURCE_FILTERS.map((filter) => (
-          <Badge
-            key={filter.lawSource}
-            variant={activeLawSource === filter.lawSource ? "default" : "outline"}
-            className="cursor-pointer transition-colors hover:bg-primary/10"
-            onClick={() => handleLawSourceToggle(filter.lawSource)}
-          >
-            {filter.label}
-          </Badge>
-        ))}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 py-1.5 sm:py-2 whitespace-nowrap">Law sources:</span>
+          {LAW_SOURCE_FILTERS.map((filter) => (
+            <Badge
+              key={filter.lawSource}
+              variant={activeLawSource === filter.lawSource ? "default" : "outline"}
+              className="cursor-pointer transition-colors hover:bg-primary/10 text-xs sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 badge-mobile"
+              onClick={() => handleLawSourceToggle(filter.lawSource)}
+            >
+              {filter.label}
+            </Badge>
+          ))}
+        </div>
       </div>
     </div>
   );
